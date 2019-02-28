@@ -26,7 +26,11 @@ import sbtcrossproject.{CrossProject, JVMPlatform}
 import sbtcrossproject.CrossPlugin.autoImport._
 import scalajscrossproject.JSPlatform
 import scalajscrossproject.ScalaJSCrossPlugin.autoImport._
+import scalanativecrossproject.NativePlatform
+import scalanativecrossproject.ScalaNativeCrossPlugin.autoImport._
 import CatalystsBase._
+
+import scala.scalanative.sbtplugin.ScalaNativePlugin
 /**
  * Plugin that automatically brings into scope all predefined val's and method
  * definitions.
@@ -157,6 +161,8 @@ trait CatalystsBase {
         case LibrarySupport.ScalaJVM =>
           libOrg %% libModuleName % libVer
         case LibrarySupport.ScalaJS =>
+          libOrg %%% libModuleName % libVer
+        case LibrarySupport.ScalaNative =>
           libOrg %%% libModuleName % libVer
       }
     }
@@ -395,6 +401,13 @@ trait CatalystsBase {
   )
 
   /**
+    * Scala Native settings shared by many projects.
+    *
+    * Currently empty.
+    */
+  lazy val sharedNativeSettings = Seq()
+
+  /**
    * Scala JVM settings shared by many projects.
    *
    * Currently empty.
@@ -593,7 +606,7 @@ trait CatalystsBase {
 
     val cpId = id.stripSuffix("M")
 
-    CrossProject(cpId, new File(cpId))(JSPlatform, JVMPlatform).crossType(crossType)
+    CrossProject(cpId, new File(cpId))(JSPlatform, JVMPlatform, NativePlatform).crossType(crossType)
      .settings(moduleName := s"$proj-$id")
     .configureCross(projConfig)
   }
@@ -609,13 +622,13 @@ trait CatalystsBase {
    */
   def mkPrj(projSettings: Seq[sbt.Setting[_]], c: CrossProject): Project = {
       val name = c.jvm.id.stripSuffix("JVM")
-      val pr: Seq[ProjectReference] = Seq(c.jvm.project,  c.js.project)
+      val pr: Seq[ProjectReference] = Seq(c.jvm.project,  c.js.project, c.native.project)
 
-      Project(id = name, base = new File(s"${name}/.prj"))
+      Project(id = name, base = new File(s"$name/.prj"))
         .settings(noPublishSettings:_*)
         .settings(projSettings)
-        .dependsOn(c.jvm, c.js)
-        .aggregate(c.jvm, c.js)
+        .dependsOn(c.jvm, c.js, c.native)
+        .aggregate(c.jvm, c.js, c.native)
    }
 
   /**
@@ -629,10 +642,11 @@ trait CatalystsBase {
    * Helper method that sets the default project(i.e. platform independent), JS and JVM settings.
    */
   def mkConfig(projSettings: Seq[sbt.Setting[_]], jvmSettings: Seq[sbt.Setting[_]],
-      jsSettings: Seq[sbt.Setting[_]] ): CrossProject ⇒ CrossProject =
+      jsSettings: Seq[sbt.Setting[_]], nativeSettings: Seq[sbt.Setting[_]]): CrossProject ⇒ CrossProject =
     _.settings(projSettings:_*)
     .jsSettings(jsSettings:_*)
     .jvmSettings(jvmSettings:_*)
+    .nativeSettings(nativeSettings:_*)
 
   /**
    * Helper method that sets the root project's settings
@@ -674,6 +688,20 @@ trait CatalystsBase {
     .settings(jsSettings)
     .in(file("." + s + "JS"))
     .enablePlugins(ScalaJSPlugin)
+
+  /**
+    * Creates the rootNative project.
+    *
+    * Creates the rootNative project in ".rootNative" with the default settings and
+    * Native specific default settings.
+    */
+  def mkRootNativeConfig(s: String, projSettings: Seq[sbt.Setting[_]],
+                         nativeSettings: Seq[sbt.Setting[_]]): Project ⇒ Project =
+    _.settings(moduleName := s)
+      .settings(projSettings)
+      .settings(nativeSettings)
+      .in(file("." + s + "Native"))
+      .enablePlugins(ScalaNativePlugin)
 
   import scala.language.postfixOps
   /**
@@ -720,6 +748,7 @@ object CatalystsBase {
 sealed trait LibrarySupport extends Serializable with Product
 object LibrarySupport {
   case object ScalaJS extends LibrarySupport
+  case object ScalaNative extends LibrarySupport
   case object ScalaJVM extends LibrarySupport
   case object Java extends LibrarySupport
 }
